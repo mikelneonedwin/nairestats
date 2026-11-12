@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { Analytics } from "@vercel/analytics/next";
 import NextTopLoader from "nextjs-toploader";
 import { IBM_Plex_Mono, IBM_Plex_Sans, Geist } from "next/font/google";
 import "./globals.css";
@@ -35,6 +36,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body>
         <NextTopLoader color="#8ea2ff" height={2} showSpinner={false} shadow={false} />
         {children}
+        <Analytics />
       </body>
     </html>
   );
