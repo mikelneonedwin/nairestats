@@ -164,3 +164,53 @@ export function modelLab(id: string, rawModel: string): string {
     "Unattributed"
   );
 }
+
+export type OriginRegion = "American" | "Chinese" | "Other";
+export type ModelWeightType = "Open Weight" | "Closed Weight";
+
+export function labOriginRegion(lab: string): OriginRegion {
+  switch (lab) {
+    case "Anthropic":
+    case "OpenAI":
+    case "Google":
+    case "Meta":
+    case "NVIDIA":
+    case "Microsoft":
+    case "xAI":
+    case "Amazon":
+    case "Perplexity":
+    case "Reflection AI":
+      return "American";
+    case "DeepSeek":
+    case "Alibaba":
+    case "Z.ai":
+    case "MiniMax":
+    case "Moonshot AI":
+    case "Xiaomi":
+    case "Inclusion AI":
+    case "Baidu":
+    case "StepFun":
+    case "Shanghai AI Lab":
+      return "Chinese";
+    default:
+      return "Other";
+  }
+}
+
+export function isModelOpenWeight(id: string): boolean {
+  if (
+    id.startsWith("gemma") ||
+    id.startsWith("llama") ||
+    id.startsWith("qwen") ||
+    id.startsWith("deepseek") ||
+    id.startsWith("glm") ||
+    id.startsWith("nemotron") ||
+    id.startsWith("gpt-oss") ||
+    id.startsWith("mistral") ||
+    id.startsWith("codestral") ||
+    id.startsWith("phi-")
+  ) {
+    return true;
+  }
+  return false;
+}

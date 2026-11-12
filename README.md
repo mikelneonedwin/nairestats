@@ -1,6 +1,10 @@
-# Tokenaires usage report
+# Nairestats
 
-A single-page Next.js report for all-time token usage across harnesses, models, and labs. The page uses the same layout and styling as the supplied HTML reference. Each table can sort by any column and has its own Raw/Short token display tabs.
+A single-page Next.js report for all-time token usage across harnesses, models, and labs. The page presents live stats with column sorting, live per-table filtering, full token numbers on desktop, and compact short notation on mobile.
+
+## Attribution
+
+This project is built around data and metrics provided by [Tokenaires](https://tokenaires.cc) and its accompanying backend services. All underlying board and profile figures are pulled directly from their public API endpoints.
 
 ## Run locally
 

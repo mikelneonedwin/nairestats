@@ -1,7 +1,10 @@
 import type { Metadata, Viewport } from "next";
 import NextTopLoader from "nextjs-toploader";
-import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
+import { IBM_Plex_Mono, IBM_Plex_Sans, Geist } from "next/font/google";
 import "./globals.css";
+import { cn } from "@/lib/utils";
+
+const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
 const plexSans = IBM_Plex_Sans({
   variable: "--font-plex-sans",
@@ -28,7 +31,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${plexSans.variable} ${plexMono.variable}`}>
+    <html lang="en" className={cn(plexSans.variable, plexMono.variable, "dark", "font-sans", geist.variable)}>
       <body>
         <NextTopLoader color="#8ea2ff" height={2} showSpinner={false} shadow={false} />
         {children}

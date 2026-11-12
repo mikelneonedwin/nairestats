@@ -1,5 +1,12 @@
 import "server-only";
-import { modelDisplayName, modelLab, normalizeModelId } from "./model-identity";
+import { cacheLife } from "next/cache";
+import {
+  isModelOpenWeight,
+  labOriginRegion,
+  modelDisplayName,
+  modelLab,
+  normalizeModelId,
+} from "./model-identity";
 
 const API_BASE_URL = "https://tokenaires.cc/api/v1";
 const PAGE_LIMIT = 1000;
@@ -56,10 +63,15 @@ export type UsageData = {
   harnesses: UsageRow[];
   models: UsageRow[];
   labs: UsageRow[];
+  regions: UsageRow[];
+  weights: UsageRow[];
+  providerModels: Record<string, UsageRow[]>;
   totalTokens: number;
   activeUsers: number;
   observedTokens: number;
   profileTokens: number;
+  generatedAt: string;
+  nextRefreshAt: string;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -212,6 +224,13 @@ async function mapWithConcurrency<Input, Output>(
 }
 
 export async function getUsageData(): Promise<UsageData> {
+  "use cache";
+  cacheLife({
+    stale: CACHE_SECONDS,
+    revalidate: CACHE_SECONDS,
+    expire: CACHE_SECONDS * 6,
+  });
+
   const harnesses = await mapWithConcurrency(
     SOURCES,
     REQUEST_CONCURRENCY,
@@ -309,13 +328,66 @@ export async function getUsageData(): Promise<UsageData> {
     .sort(([, a], [, b]) => b.tokens - a.tokens)
     .map(([name, lab]) => toRow(name, lab.tokens, lab.users.size, observedTokens));
 
+  const regionsMap = new Map<string, { tokens: number; users: Set<string> }>([
+    ["American", { tokens: 0, users: new Set<string>() }],
+    ["Chinese", { tokens: 0, users: new Set<string>() }],
+    ["Other", { tokens: 0, users: new Set<string>() }],
+  ]);
+  for (const model of models.values()) {
+    const region = labOriginRegion(model.lab);
+    const item = regionsMap.get(region) ?? { tokens: 0, users: new Set<string>() };
+    item.tokens += model.tokens;
+    for (const u of model.users) item.users.add(u);
+    regionsMap.set(region, item);
+  }
+  const regionRows = [...regionsMap]
+    .filter(([, r]) => r.tokens > 0)
+    .sort(([, a], [, b]) => b.tokens - a.tokens)
+    .map(([name, r]) => toRow(name, r.tokens, r.users.size, observedTokens));
+
+  const weightsMap = new Map<string, { tokens: number; users: Set<string> }>([
+    ["Open Weight", { tokens: 0, users: new Set<string>() }],
+    ["Closed Weight", { tokens: 0, users: new Set<string>() }],
+  ]);
+  for (const [id, model] of models) {
+    const weightType = isModelOpenWeight(id)
+      ? "Open Weight"
+      : "Closed Weight";
+    const item = weightsMap.get(weightType)!;
+    item.tokens += model.tokens;
+    for (const u of model.users) item.users.add(u);
+  }
+  const weightRows = [...weightsMap]
+    .filter(([, w]) => w.tokens > 0)
+    .sort(([, a], [, b]) => b.tokens - a.tokens)
+    .map(([name, w]) => toRow(name, w.tokens, w.users.size, observedTokens));
+
+  const providerModels: Record<string, UsageRow[]> = {};
+  for (const [labName, labData] of labs) {
+    if (labData.tokens <= 0) continue;
+    const labModelEntries = [...models.values()]
+      .filter((m) => m.lab === labName)
+      .sort((a, b) => b.tokens - a.tokens);
+    providerModels[labName] = labModelEntries.map((m) =>
+      toRow(m.name, m.tokens, m.users.size, labData.tokens),
+    );
+  }
+
+  const now = new Date();
+  const nextRefresh = new Date(now.getTime() + CACHE_SECONDS * 1000);
+
   return {
     harnesses: harnessRows,
     models: modelRows,
     labs: labRows,
+    regions: regionRows,
+    weights: weightRows,
+    providerModels,
     totalTokens,
     activeUsers,
     observedTokens,
     profileTokens,
+    generatedAt: now.toISOString(),
+    nextRefreshAt: nextRefresh.toISOString(),
   };
 }
