@@ -29,6 +29,9 @@ type TableProps = {
   rows: UsageRow[];
   viewMode: ViewMode;
   onViewModeChange: (mode: ViewMode, originElement?: HTMLElement | null) => void;
+  hideUsersCount?: boolean;
+  shareLabel?: string;
+  isUserTable?: boolean;
 };
 
 const CHART_PALETTE = [
@@ -353,9 +356,38 @@ function BarChart({
         const pct = maxTokens ? (item.tokens / maxTokens) * 100 : 0;
         const color = CHART_PALETTE[index % CHART_PALETTE.length];
         return (
-          <div key={item.name} className="bar-chart-row">
+          <div key={`${item.name}-${index}`} className="bar-chart-row">
+            <span className="bar-chart-rank">#{index + 1}</span>
             <div className="bar-chart-label" title={item.name}>
-              {item.name}
+              {item.avatarUrl !== undefined ? (
+                <a
+                  href={`https://github.com/${encodeURIComponent(item.handle || item.name)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="bar-chart-user-link"
+                >
+                  <span className="bar-chart-avatar-wrap">
+                    {item.avatarUrl ? (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img
+                        src={item.avatarUrl}
+                        alt={item.name}
+                        className="bar-chart-avatar"
+                        width={22}
+                        height={22}
+                        loading="lazy"
+                      />
+                    ) : (
+                      <span className="bar-chart-avatar-fallback">
+                        {(item.handle || item.name).slice(0, 2).toUpperCase()}
+                      </span>
+                    )}
+                  </span>
+                  <span className="bar-chart-label-text">{item.name}</span>
+                </a>
+              ) : (
+                <span className="bar-chart-label-text">{item.name}</span>
+              )}
             </div>
             <div className="bar-chart-track">
               <div
@@ -460,6 +492,9 @@ function TableSection({
   rows,
   viewMode,
   onViewModeChange,
+  hideUsersCount = false,
+  shareLabel,
+  isUserTable = false,
 }: TableProps) {
   const [sortKey, setSortKey] = useState<SortKey>("rank");
   const [sortDirection, setSortDirection] = useState<1 | -1>(1);
@@ -473,10 +508,25 @@ function TableSection({
   const filteredRows = useMemo(() => {
     const trimmed = query.trim().toLowerCase();
     if (!trimmed) return numberedRows;
-    return numberedRows.filter((row) =>
-      row.name.toLowerCase().includes(trimmed),
+    return numberedRows.filter(
+      (row) =>
+        row.name.toLowerCase().includes(trimmed) ||
+        (row.handle && row.handle.toLowerCase().includes(trimmed)),
     );
   }, [numberedRows, query]);
+
+  const chartItems = useMemo(() => {
+    if (!isUserTable) return filteredRows;
+    return filteredRows.map((row) => ({
+      ...row,
+      name:
+        row.handle && row.handle !== row.name
+          ? `${row.name} (@${row.handle})`
+          : row.handle
+            ? `@${row.handle}`
+            : row.name,
+    }));
+  }, [filteredRows, isUserTable]);
 
   const sortedRows = useMemo(
     () =>
@@ -499,17 +549,22 @@ function TableSection({
     [rows],
   );
 
-  const columns: { key: SortKey; label: string; className: string }[] = [
-    { key: "rank", label: "#", className: "rk" },
-    { key: "name", label: columnTitle, className: "" },
-    { key: "tokens", label: "Tokens", className: "n" },
-    {
-      key: "share",
-      label: id === "harness" ? "Share" : "Share of observed",
-      className: "n",
-    },
-    { key: "users", label: "Users", className: "n" },
-  ];
+  const columns: { key: SortKey; label: string; className: string }[] = useMemo(() => {
+    const list: { key: SortKey; label: string; className: string }[] = [
+      { key: "rank", label: "#", className: "rk" },
+      { key: "name", label: columnTitle, className: "" },
+      { key: "tokens", label: "Tokens", className: "n" },
+      {
+        key: "share",
+        label: shareLabel ?? (id === "harness" ? "Share" : "Share of observed"),
+        className: "n",
+      },
+    ];
+    if (!hideUsersCount) {
+      list.push({ key: "users", label: "Users", className: "n" });
+    }
+    return list;
+  }, [columnTitle, hideUsersCount, id, shareLabel]);
 
   return (
     <section className="usage-section" aria-labelledby={`${id}-heading`}>
@@ -585,7 +640,55 @@ function TableSection({
                 sortedRows.map((row) => (
                   <tr key={row.rank}>
                     <td className="rk">{row.rank}</td>
-                    <td>{row.name}</td>
+                    <td>
+                      {isUserTable ? (
+                        <div className="user-cell">
+                          <a
+                            href={`https://github.com/${encodeURIComponent(row.handle || row.name)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="user-avatar-wrap"
+                            aria-label={`View ${row.name}'s GitHub profile`}
+                          >
+                            {row.avatarUrl ? (
+                              /* eslint-disable-next-line @next/next/no-img-element */
+                              <img
+                                src={row.avatarUrl}
+                                alt={row.name}
+                                className="user-avatar"
+                                width={32}
+                                height={32}
+                                loading="lazy"
+                              />
+                            ) : (
+                              <span className="user-avatar-fallback">
+                                {(row.handle || row.name).slice(0, 2).toUpperCase()}
+                              </span>
+                            )}
+                          </a>
+                          <span className="user-info">
+                            <a
+                              href={`https://github.com/${encodeURIComponent(row.handle || row.name)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="user-display-name"
+                            >
+                              {row.name}
+                            </a>
+                            <a
+                              href={`https://github.com/${encodeURIComponent(row.handle || row.name)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="user-handle"
+                            >
+                              @{row.handle || row.name}
+                            </a>
+                          </span>
+                        </div>
+                      ) : (
+                        row.name
+                      )}
+                    </td>
                     <td className="n"><TokenValue value={row.tokens} /></td>
                     <td className="n">
                       <div className="sh">
@@ -599,7 +702,9 @@ function TableSection({
                         <span>{row.share.toFixed(2)}%</span>
                       </div>
                     </td>
-                    <td className="n">{INTEGER_FORMAT.format(row.users)}</td>
+                    {!hideUsersCount && (
+                      <td className="n">{INTEGER_FORMAT.format(row.users)}</td>
+                    )}
                   </tr>
                 ))
               )}
@@ -607,9 +712,9 @@ function TableSection({
           </table>
         </div>
       ) : viewMode === "pie" ? (
-        <PieChart items={filteredRows} totalTokens={totalTokens} />
+        <PieChart items={chartItems} totalTokens={totalTokens} />
       ) : (
-        <BarChart items={filteredRows} maxTokens={maxTokens} />
+        <BarChart items={chartItems} maxTokens={maxTokens} />
       )}
     </section>
   );
@@ -673,6 +778,48 @@ export function UsageDashboard({ data }: { data: UsageData }) {
   const selectedProviderTokens = useMemo(
     () => selectedProviderRows.reduce((sum, r) => sum + r.tokens, 0),
     [selectedProviderRows],
+  );
+
+  // Model users
+  const availableModels = useMemo(
+    () => Object.keys(data.modelUsers).sort((a, b) => a.localeCompare(b)),
+    [data.modelUsers],
+  );
+  const [selectedModel, setSelectedModel] = useState<string>(
+    availableModels[0] ?? "",
+  );
+  const activeSelectedModel =
+    selectedModel && availableModels.includes(selectedModel)
+      ? selectedModel
+      : (availableModels[0] ?? "");
+  const selectedModelRows = useMemo(
+    () => (activeSelectedModel ? data.modelUsers[activeSelectedModel] ?? [] : []),
+    [data.modelUsers, activeSelectedModel],
+  );
+  const selectedModelTokens = useMemo(
+    () => selectedModelRows.reduce((sum, r) => sum + r.tokens, 0),
+    [selectedModelRows],
+  );
+
+  // Provider users
+  const availableProviderUsers = useMemo(
+    () => Object.keys(data.providerUsers).sort((a, b) => a.localeCompare(b)),
+    [data.providerUsers],
+  );
+  const [selectedProviderUser, setSelectedProviderUser] = useState<string>(
+    availableProviderUsers[0] ?? "",
+  );
+  const activeSelectedProviderUser =
+    selectedProviderUser && availableProviderUsers.includes(selectedProviderUser)
+      ? selectedProviderUser
+      : (availableProviderUsers[0] ?? "");
+  const selectedProviderUserRows = useMemo(
+    () => (activeSelectedProviderUser ? data.providerUsers[activeSelectedProviderUser] ?? [] : []),
+    [data.providerUsers, activeSelectedProviderUser],
+  );
+  const selectedProviderUserTokens = useMemo(
+    () => selectedProviderUserRows.reduce((sum, r) => sum + r.tokens, 0),
+    [selectedProviderUserRows],
   );
 
   return (
@@ -756,6 +903,86 @@ export function UsageDashboard({ data }: { data: UsageData }) {
         onViewModeChange={handleViewModeChange}
         note="Observed profiles only. Shares use observed model tokens; unknown model families are included as Unattributed."
       />
+
+      {activeSelectedModel && (
+        <TableSection
+          key={activeSelectedModel}
+          id="model-users"
+          title={
+            <div className="select-heading-wrap">
+              <span className="select-heading-label">Who uses model</span>
+              <Select
+                value={activeSelectedModel}
+                onValueChange={(v) => v && setSelectedModel(v)}
+              >
+                <SelectTrigger className="provider-select-trigger" aria-label="Select model">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent align="start" sideOffset={6}>
+                  {availableModels.map((model) => (
+                    <SelectItem key={model} value={model}>
+                      {model}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          }
+          columnTitle="User"
+          rows={selectedModelRows}
+          viewMode={viewMode}
+          onViewModeChange={handleViewModeChange}
+          hideUsersCount
+          isUserTable
+          shareLabel={`Share of ${activeSelectedModel}`}
+          note={
+            <>
+              Observed profiles only. {INTEGER_FORMAT.format(selectedModelRows.length)} users recorded for {activeSelectedModel} totaling{" "}
+              <TokenValue value={selectedModelTokens} /> tokens.
+            </>
+          }
+        />
+      )}
+
+      {activeSelectedProviderUser && (
+        <TableSection
+          key={activeSelectedProviderUser}
+          id="provider-users"
+          title={
+            <div className="select-heading-wrap">
+              <span className="select-heading-label">Who uses provider</span>
+              <Select
+                value={activeSelectedProviderUser}
+                onValueChange={(v) => v && setSelectedProviderUser(v)}
+              >
+                <SelectTrigger className="provider-select-trigger" aria-label="Select provider">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent align="start" sideOffset={6}>
+                  {availableProviderUsers.map((prov) => (
+                    <SelectItem key={prov} value={prov}>
+                      {prov}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          }
+          columnTitle="User"
+          rows={selectedProviderUserRows}
+          viewMode={viewMode}
+          onViewModeChange={handleViewModeChange}
+          hideUsersCount
+          isUserTable
+          shareLabel={`Share of ${activeSelectedProviderUser}`}
+          note={
+            <>
+              Observed profiles only. {INTEGER_FORMAT.format(selectedProviderUserRows.length)} users recorded for {activeSelectedProviderUser} totaling{" "}
+              <TokenValue value={selectedProviderUserTokens} /> tokens.
+            </>
+          }
+        />
+      )}
 
       <TableSection
         id="regions"

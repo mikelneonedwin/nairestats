@@ -34,7 +34,11 @@ const SOURCES = [
 type Source = (typeof SOURCES)[number][0];
 type BoardEntry = {
   tokens: number;
-  user: { handle: string };
+  user: {
+    handle: string;
+    name?: string | null;
+    avatarUrl?: string | null;
+  };
 };
 type BoardPage = {
   entries: BoardEntry[];
@@ -51,12 +55,15 @@ type ModelStats = {
   name: string;
   tokens: number;
   users: Set<string>;
+  userTokens: Map<string, number>;
 };
-type UsageRow = {
+export type UsageRow = {
   name: string;
   tokens: number;
   share: number;
   users: number;
+  handle?: string;
+  avatarUrl?: string | null;
 };
 
 export type UsageData = {
@@ -66,6 +73,8 @@ export type UsageData = {
   regions: UsageRow[];
   weights: UsageRow[];
   providerModels: Record<string, UsageRow[]>;
+  modelUsers: Record<string, UsageRow[]>;
+  providerUsers: Record<string, UsageRow[]>;
   totalTokens: number;
   activeUsers: number;
   observedTokens: number;
@@ -237,16 +246,43 @@ export async function getUsageData(): Promise<UsageData> {
     async ([source, name]) => {
       const entries = await fetchAllBoard(source);
       return {
+        source,
         handles: entries.map((entry) => entry.user.handle),
         name,
         tokens: entries.reduce((sum, entry) => sum + entry.tokens, 0),
         users: entries.length,
+        entries,
       };
     },
   );
   const activeUsers = new Set(harnesses.flatMap((harness) => harness.handles)).size;
 
   const allTimeEntries = await fetchAllBoard();
+  const userInfoMap = new Map<
+    string,
+    { handle: string; name: string; avatarUrl: string | null }
+  >();
+
+  for (const entry of allTimeEntries) {
+    userInfoMap.set(entry.user.handle, {
+      handle: entry.user.handle,
+      name: entry.user.name?.trim() || entry.user.handle,
+      avatarUrl: entry.user.avatarUrl ?? null,
+    });
+  }
+
+  for (const harness of harnesses) {
+    for (const entry of harness.entries) {
+      if (!userInfoMap.has(entry.user.handle)) {
+        userInfoMap.set(entry.user.handle, {
+          handle: entry.user.handle,
+          name: entry.user.name?.trim() || entry.user.handle,
+          avatarUrl: entry.user.avatarUrl ?? null,
+        });
+      }
+    }
+  }
+
   const handles = [...new Set(allTimeEntries.map((entry) => entry.user.handle))];
   const profiles = await mapWithConcurrency(handles, REQUEST_CONCURRENCY, async (handle) => ({
     handle,
@@ -280,6 +316,8 @@ export async function getUsageData(): Promise<UsageData> {
       const existing = models.get(id);
       const users = new Set(existing ? existing.users : []);
       users.add(handle);
+      const userTokens = new Map(existing ? existing.userTokens : []);
+      userTokens.set(handle, (userTokens.get(handle) ?? 0) + userModel.tokens);
       models.set(id, {
         lab:
           existing?.lab === "Unattributed"
@@ -288,6 +326,7 @@ export async function getUsageData(): Promise<UsageData> {
         name: userModel.name,
         tokens: (existing?.tokens ?? 0) + userModel.tokens,
         users,
+        userTokens,
       });
     }
   }
@@ -373,6 +412,76 @@ export async function getUsageData(): Promise<UsageData> {
     );
   }
 
+  const modelUserTokensByName = new Map<
+    string,
+    { totalTokens: number; userTokens: Map<string, number> }
+  >();
+  for (const model of models.values()) {
+    const existing = modelUserTokensByName.get(model.name) ?? {
+      totalTokens: 0,
+      userTokens: new Map<string, number>(),
+    };
+    existing.totalTokens += model.tokens;
+    for (const [user, tokens] of model.userTokens) {
+      existing.userTokens.set(user, (existing.userTokens.get(user) ?? 0) + tokens);
+    }
+    modelUserTokensByName.set(model.name, existing);
+  }
+
+  const modelUsers: Record<string, UsageRow[]> = {};
+  for (const [modelName, { totalTokens: modelTotal, userTokens }] of modelUserTokensByName) {
+    if (modelTotal <= 0) continue;
+    const sorted = [...userTokens.entries()]
+      .filter(([, tokens]) => tokens > 0)
+      .sort(([, a], [, b]) => b - a);
+    modelUsers[modelName] = sorted.map(([handle, tokens]) => {
+      const info = userInfoMap.get(handle);
+      return {
+        name: info?.name || handle,
+        handle,
+        avatarUrl: info?.avatarUrl ?? null,
+        tokens,
+        share: modelTotal ? (tokens / modelTotal) * 100 : 0,
+        users: 1,
+      };
+    });
+  }
+
+  const labUserTokens = new Map<
+    string,
+    { totalTokens: number; userTokens: Map<string, number> }
+  >();
+  for (const model of models.values()) {
+    const existing = labUserTokens.get(model.lab) ?? {
+      totalTokens: 0,
+      userTokens: new Map<string, number>(),
+    };
+    existing.totalTokens += model.tokens;
+    for (const [user, tokens] of model.userTokens) {
+      existing.userTokens.set(user, (existing.userTokens.get(user) ?? 0) + tokens);
+    }
+    labUserTokens.set(model.lab, existing);
+  }
+
+  const providerUsers: Record<string, UsageRow[]> = {};
+  for (const [providerName, { totalTokens: providerTotal, userTokens }] of labUserTokens) {
+    if (providerTotal <= 0) continue;
+    const sorted = [...userTokens.entries()]
+      .filter(([, tokens]) => tokens > 0)
+      .sort(([, a], [, b]) => b - a);
+    providerUsers[providerName] = sorted.map(([handle, tokens]) => {
+      const info = userInfoMap.get(handle);
+      return {
+        name: info?.name || handle,
+        handle,
+        avatarUrl: info?.avatarUrl ?? null,
+        tokens,
+        share: providerTotal ? (tokens / providerTotal) * 100 : 0,
+        users: 1,
+      };
+    });
+  }
+
   const now = new Date();
   const nextRefresh = new Date(now.getTime() + CACHE_SECONDS * 1000);
 
@@ -383,6 +492,8 @@ export async function getUsageData(): Promise<UsageData> {
     regions: regionRows,
     weights: weightRows,
     providerModels,
+    modelUsers,
+    providerUsers,
     totalTokens,
     activeUsers,
     observedTokens,

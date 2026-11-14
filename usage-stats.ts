@@ -43,12 +43,14 @@ type HarnessStats = {
   name: string;
   tokens: number;
   users: number;
+  entries: BoardEntry[];
 };
 type ModelStats = {
   lab: string;
   name: string;
   tokens: number;
   users: Set<string>;
+  userTokens: Map<string, number>;
 };
 type LabStats = {
   name: string;
@@ -321,6 +323,97 @@ function printLabTable(
   );
 }
 
+
+function printModelTopUsersTable(models: Map<string, ModelStats>): void {
+  console.log('\nWho uses what model most (observed profiles only)');
+  const rows = [...models.values()]
+    .filter((m) => m.tokens > 0)
+    .map((m) => {
+      let topUser = '';
+      let topTokens = 0;
+      for (const [u, t] of m.userTokens) {
+        if (t > topTokens) {
+          topTokens = t;
+          topUser = u;
+        }
+      }
+      return {
+        Model: m.name,
+        'Top User': `@${topUser}`,
+        Tokens: NUMBER_FORMAT.format(topTokens),
+        'Share of model': `${m.tokens ? ((topTokens / m.tokens) * 100).toFixed(2) : '0.00'}%`,
+        'Total model tokens': NUMBER_FORMAT.format(m.tokens),
+      };
+    })
+    .sort(
+      (a, b) =>
+        Number(b.Tokens.replace(/,/g, '')) - Number(a.Tokens.replace(/,/g, '')),
+    );
+  console.table(oneBasedRows(rows));
+}
+
+function printProviderTopUsersTable(
+  models: Map<string, ModelStats>,
+  labs: Map<string, LabStats>,
+): void {
+  console.log('\nWho uses what provider most (observed profiles only)');
+  const labUserTokens = new Map<string, Map<string, number>>();
+  for (const model of models.values()) {
+    const labUsers = labUserTokens.get(model.lab) ?? new Map<string, number>();
+    for (const [user, tokens] of model.userTokens) {
+      labUsers.set(user, (labUsers.get(user) ?? 0) + tokens);
+    }
+    labUserTokens.set(model.lab, labUsers);
+  }
+
+  const rows = [...labs.values()]
+    .filter((lab) => lab.tokens > 0)
+    .map((lab) => {
+      const userTokens = labUserTokens.get(lab.name) ?? new Map<string, number>();
+      let topUser = '';
+      let topTokens = 0;
+      for (const [u, t] of userTokens) {
+        if (t > topTokens) {
+          topTokens = t;
+          topUser = u;
+        }
+      }
+      return {
+        Provider: lab.name,
+        'Top User': `@${topUser}`,
+        Tokens: NUMBER_FORMAT.format(topTokens),
+        'Share of provider': `${lab.tokens ? ((topTokens / lab.tokens) * 100).toFixed(2) : '0.00'}%`,
+        'Total provider tokens': NUMBER_FORMAT.format(lab.tokens),
+      };
+    })
+    .sort(
+      (a, b) =>
+        Number(b.Tokens.replace(/,/g, '')) - Number(a.Tokens.replace(/,/g, '')),
+    );
+  console.table(oneBasedRows(rows));
+}
+
+function printHarnessTopUsersTable(harnesses: HarnessStats[]): void {
+  console.log('\nWho uses what harness most (all-time)');
+  const rows = harnesses
+    .filter((h) => h.tokens > 0 && h.entries.length > 0)
+    .map((h) => {
+      const top = [...h.entries].sort((a, b) => b.tokens - a.tokens)[0]!;
+      return {
+        Harness: h.name,
+        'Top User': `@${top.user.handle}`,
+        Tokens: NUMBER_FORMAT.format(top.tokens),
+        'Share of harness': `${h.tokens ? ((top.tokens / h.tokens) * 100).toFixed(2) : '0.00'}%`,
+        'Total harness tokens': NUMBER_FORMAT.format(h.tokens),
+      };
+    })
+    .sort(
+      (a, b) =>
+        Number(b.Tokens.replace(/,/g, '')) - Number(a.Tokens.replace(/,/g, '')),
+    );
+  console.table(oneBasedRows(rows));
+}
+
 async function main(): Promise<void> {
   const harnesses = await Promise.all(
     SOURCES.map(async ([source, name]) => {
@@ -330,12 +423,14 @@ async function main(): Promise<void> {
         name,
         tokens: entries.reduce((sum, entry) => sum + entry.tokens, 0),
         users: entries.length,
+        entries,
       };
     }),
   );
   const activeUsers = new Set(harnesses.flatMap((harness) => harness.handles)).size;
 
   const allTimeEntries = await fetchAllBoard();
+
   const profiles = await mapWithConcurrency(allTimeEntries, 8, async (entry) => ({
     handle: entry.user.handle,
     profile: await fetchProfile(entry.user.handle),
@@ -366,6 +461,8 @@ async function main(): Promise<void> {
       const existing = models.get(id);
       const users = new Set(existing ? existing.users : []);
       users.add(handle);
+      const userTokens = new Map(existing ? existing.userTokens : []);
+      userTokens.set(handle, (userTokens.get(handle) ?? 0) + userModel.tokens);
       models.set(id, {
         lab:
           existing?.lab === 'Unattributed'
@@ -374,13 +471,19 @@ async function main(): Promise<void> {
         name: userModel.name,
         tokens: (existing?.tokens ?? 0) + userModel.tokens,
         users,
+        userTokens,
       });
     }
   }
 
+  const labs = labStatsFor(models);
+
   printHarnessTable(harnesses, activeUsers);
   printModelTable(models, observedTokens, profileTokens);
-  printLabTable(labStatsFor(models), observedTokens);
+  printLabTable(labs, observedTokens);
+  printModelTopUsersTable(models);
+  printProviderTopUsersTable(models, labs);
+  printHarnessTopUsersTable(harnesses);
 }
 
 async function run(): Promise<void> {
