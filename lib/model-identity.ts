@@ -35,6 +35,8 @@ const MODEL_ALIASES = new Map([
   ["gemini-3-flash-a", "gemini-3-flash-preview"],
   ["gemini-4-argon-s", "gemini-4-argon"],
   ["gemini-pro-default", "gemini-4-argon"],
+  ["gemini-3.8-flash-k", "gemini-3.8-flash"],
+  ["gemini-3-8-flash-k", "gemini-3.8-flash"],
 ]);
 
 const ACRONYMS = new Map([
@@ -81,7 +83,7 @@ export function normalizeModelId(model: string): string {
   }
 
   if (id.startsWith("gemini-")) {
-    id = id.replace(/-(?:control|tiered|trial|exp-[a-z]|n|low|medium|high)$/, "");
+    id = id.replace(/-(?:control|tiered|trial|exp-[a-z]|n|k|low|medium|high)$/, "");
   }
 
   id = id.replace(/(\d)-(\d)(?=-|$)/g, "$1.$2");
