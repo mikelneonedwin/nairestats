@@ -34,7 +34,6 @@ const PROVIDER_PREFIX_LABS: readonly [RegExp, string][] = [
 const MODEL_ALIASES = new Map([
   ["gemini-3-flash-a", "gemini-3-flash-preview"],
   ["gemini-4-argon-s", "gemini-4-argon"],
-  ["gemini-pro-default", "gemini-4-argon"],
   ["gemini-3.8-flash-k", "gemini-3.8-flash"],
   ["gemini-3-8-flash-k", "gemini-3.8-flash"],
 ]);
@@ -83,7 +82,15 @@ export function normalizeModelId(model: string): string {
   }
 
   if (id.startsWith("gemini-")) {
-    id = id.replace(/-(?:control|tiered|trial|exp-[a-z]|n|k|low|medium|high)$/, "");
+    id = id.replace(/(?:-(?:control|tiered|trial|exp-[a-z]|n|k|low|medium|high))+$/, "");
+  }
+
+  if (id.startsWith("gpt-oss-") || id.startsWith("swe-")) {
+    id = id.replace(/-(?:thinking|medium|high|low|slow)$/, "");
+  }
+
+  if (id.startsWith("muse-")) {
+    id = id.replace(/-contributor$/, "");
   }
 
   id = id.replace(/(\d)-(\d)(?=-|$)/g, "$1.$2");
